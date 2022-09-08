@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 from pydantic import BaseModel
 
@@ -10,6 +10,7 @@ class Show(BaseModel):
     status: str
     date_started: Optional[date]
     date_finished: Optional[date]
+    last_updated: Optional[datetime]
 
     class Config:
         orm_mode = True
@@ -19,6 +20,7 @@ class Movie(BaseModel):
     name: str
     status: str
     date_watched: Optional[date]
+    last_updated: Optional[datetime]
 
     class Config:
         orm_mode = True
@@ -26,6 +28,7 @@ class Movie(BaseModel):
 class Webcomic(BaseModel):
     id: Optional[int]
     name: str
+    last_updated: Optional[datetime]
 
     class Config:
         orm_mode = True
