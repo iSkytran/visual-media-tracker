@@ -1,17 +1,22 @@
 from datetime import datetime
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException, status, Header, Response
 from sqlalchemy.orm import Session
 from typing import Any, Iterator, Type
-from types import ModelTypes, SchemaTypes, OperationStackType
 import database
 import models
 import schemas
+
+ModelTypes = models.Show | models.Movie | models.Webcomic
+SchemaTypes = schemas.Show | schemas.Movie | schemas.Webcomic
+OperationStackType = list[tuple[str, Type[ModelTypes], Type[SchemaTypes], SchemaTypes]]
 
 app = FastAPI(debug=True)
 database.Base.metadata.create_all(database.engine)
 
 undo_stack: OperationStackType = []
 redo_stack: OperationStackType = []
+
+last_fetch_time: datetime = datetime.now()
 
 def get_db() -> Iterator[Session]:
     db = database.SessionLocal()
@@ -21,92 +26,131 @@ def get_db() -> Iterator[Session]:
         db.close()
 
 @app.get("/shows", response_model=list[schemas.Show])
-def get_shows(db: Session = Depends(get_db)) -> Any:
+def get_shows(response: Response, db: Session = Depends(get_db)) -> Any:
+    global last_fetch_time
+    last_fetch_time = datetime.now()
+    response.headers["Fetch-Time"] = last_fetch_time.isoformat()
     return db.query(models.Show).all()
 
 @app.get("/movies", response_model=list[schemas.Movie])
-def get_movies(db: Session = Depends(get_db)) -> Any:
+def get_movies(response: Response, db: Session = Depends(get_db)) -> Any:
+    global last_fetch_time
+    last_fetch_time = datetime.now()
+    response.headers["Fetch-Time"] = last_fetch_time.isoformat()
     return db.query(models.Movie).all()
 
 @app.get("/webcomics", response_model=list[schemas.Webcomic])
-def get_webcomics(db: Session = Depends(get_db)) -> Any:
+def get_webcomics(response: Response, db: Session = Depends(get_db)) -> Any:
+    global last_fetch_time
+    last_fetch_time = datetime.now()
+    response.headers["Fetch-Time"] = last_fetch_time.isoformat()
     return db.query(models.Webcomic).all()
 
-@app.post("/shows")
-def post_show(show: schemas.Show, db: Session = Depends(get_db)) -> Any:
+@app.post("/shows", status_code=status.HTTP_204_NO_CONTENT)
+def post_show(show: schemas.Show, fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> Any:
+    if fetch_time is not None and fetch_time != last_fetch_time:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
+
     show.last_updated = datetime.now()
 
     if show.id is None:
-        add(show, models.Show, schemas.Show, redo_stack, db)
+        add(show, models.Show, schemas.Show, undo_stack, db)
     else:
-        update(show, models.Show, schemas.Show, redo_stack, db)
+        update(show, models.Show, schemas.Show, undo_stack, db)
 
     redo_stack.clear()
 
-@app.post("/movies")
-def post_movie(movie: schemas.Movie, db: Session = Depends(get_db)) -> Any:
+@app.post("/movies", status_code=status.HTTP_204_NO_CONTENT)
+def post_movie(movie: schemas.Movie, fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> Any:
+    if fetch_time is not None and fetch_time != last_fetch_time:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
+
     movie.last_updated = datetime.now()
 
     if movie.id is None:
-        add(movie, models.Movie, schemas.Movie, redo_stack, db)
+        add(movie, models.Movie, schemas.Movie, undo_stack, db)
     else:
-        update(movie, models.Movie, schemas.Movie, redo_stack, db)
+        update(movie, models.Movie, schemas.Movie, undo_stack, db)
 
     redo_stack.clear()
 
-@app.post("/webcomics")
-def post_movie(webcomic: schemas.Webcomic, db: Session = Depends(get_db)) -> Any:
+@app.post("/webcomics", status_code=status.HTTP_204_NO_CONTENT)
+def post_webcomic(webcomic: schemas.Webcomic, fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> Any:
+    if fetch_time is not None and fetch_time != last_fetch_time:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
+
     webcomic.last_updated = datetime.now()
 
     if webcomic.id is None:
-        add(webcomic, models.Webcomic, schemas.Webcomic, redo_stack, db)
+        add(webcomic, models.Webcomic, schemas.Webcomic, undo_stack, db)
     else:
-        update(webcomic, models.Webcomic, schemas.Webcomic, redo_stack, db)
+        update(webcomic, models.Webcomic, schemas.Webcomic, undo_stack, db)
 
     redo_stack.clear()
 
-@app.delete("/shows/{show_id}")
-def delete_show(show_id: int, db: Session = Depends(get_db)) -> None:
-    item = db.query(models.Show).get(show_id)
-    delete(item, models.Show, schemas.Show, redo_stack, db)
+@app.delete("/shows/{show_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_show(show_id: int, fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> None:
+    if fetch_time is not None and fetch_time != last_fetch_time:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
+
+    item = schemas.Show()
+    item.id = show_id
+    delete(item, models.Show, schemas.Show, undo_stack, db)
     redo_stack.clear()
 
-@app.delete("/movies/{movie_id}")
+@app.delete("/movies/{movie_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_movie(movie_id: int, fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> None:
+    if fetch_time is not None and fetch_time != last_fetch_time:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
 
-def delete_movie(movie_id: int, db: Session = Depends(get_db)) -> None:
-    item = db.query(models.Movie).get(movie_id)
-    delete(item, models.Movie, schemas.Movie, redo_stack, db)
+    item = schemas.Movie()
+    item.id = movie_id
+    delete(item, models.Movie, schemas.Movie, undo_stack, db)
     redo_stack.clear()
 
-@app.delete("/webcomics/{webcomic_id}")
-def delete_webcomic(webcomic_id: int, db: Session = Depends(get_db)) -> None:
-    item = db.query(models.Webcomic).get(webcomic_id)
-    delete(item, models.Webcomic, schemas.Webcomic, redo_stack, db)
+@app.delete("/webcomics/{webcomic_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_webcomic(webcomic_id: int, fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> None:
+    if fetch_time is not None and fetch_time != last_fetch_time:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
+
+    item = schemas.Webcomic()
+    item.id = webcomic_id
+    delete(item, models.Webcomic, schemas.Webcomic, undo_stack, db)
     redo_stack.clear()
 
-@app.post("/undo")
-def undo(db: Session = Depends(get_db)) -> None:
+@app.post("/undo", status_code=status.HTTP_204_NO_CONTENT)
+def undo(fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> None:
+    if fetch_time is not None and fetch_time != last_fetch_time:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
+
     stack_operation(undo_stack, redo_stack, db)
 
-@app.post("/redo")
-def redo(db: Session = Depends(get_db)) -> None:
+@app.post("/redo", status_code=status.HTTP_204_NO_CONTENT)
+def redo(fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> None:
+    if fetch_time is not None and fetch_time != last_fetch_time:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
+
     stack_operation(redo_stack, undo_stack, db)
 
-def add(obj: ModelTypes, model: Type[ModelTypes], schema: Type[SchemaTypes], reverse_stack: OperationStackType, db: Session) -> None:
+def add(obj: SchemaTypes, model: Type[ModelTypes], schema: Type[SchemaTypes], stack: OperationStackType, db: Session) -> None:
     new_show = db.merge(model(**obj.dict()))
     db.flush()
-    reverse_stack.append(("delete", model, schema, schema.from_orm(new_show)))
+    stack.append(("delete", model, schema, schema.from_orm(new_show)))
     db.commit()
 
-def update(obj: ModelTypes, model: Type[ModelTypes], schema: Type[SchemaTypes], reverse_stack: OperationStackType, db: Session) -> None:
-    item = schema.from_orm(db.query(model).get(obj.id))
-    reverse_stack.append(("update", model, schema, item))
-    db.merge(models.Show(**obj.dict()))
-    db.commit()
-
-def delete(obj: ModelTypes, model: Type[ModelTypes], schema: Type[SchemaTypes], reverse_stack: OperationStackType, db: Session) -> None:
+def update(obj: SchemaTypes, model: Type[ModelTypes], schema: Type[SchemaTypes], stack: OperationStackType, db: Session) -> None:
     item = db.query(model).get(obj.id)
-    reverse_stack.append(("add", model, schema, schema.from_orm(item)))
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_BAD_REQUEST, detail="No entry with corresponding id.")
+    stack.append(("update", model, schema, schema.from_orm(item)))
+    db.merge(model(**obj.dict()))
+    db.commit()
+
+def delete(obj: SchemaTypes, model: Type[ModelTypes], schema: Type[SchemaTypes], stack: OperationStackType, db: Session) -> None:
+    item = db.query(model).get(obj.id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_BAD_REQUEST, detail="No entry with corresponding id.")
+    stack.append(("add", model, schema, schema.from_orm(item)))
     db.delete(item)
     db.commit()
 
