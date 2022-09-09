@@ -27,110 +27,120 @@ def get_db() -> Iterator[Session]:
 
 @app.get("/shows", response_model=list[schemas.Show])
 def get_shows(response: Response, db: Session = Depends(get_db)) -> Any:
-    global last_fetch_time
-    last_fetch_time = datetime.now()
     response.headers["Fetch-Time"] = last_fetch_time.isoformat()
     return db.query(models.Show).all()
 
 @app.get("/movies", response_model=list[schemas.Movie])
 def get_movies(response: Response, db: Session = Depends(get_db)) -> Any:
-    global last_fetch_time
-    last_fetch_time = datetime.now()
     response.headers["Fetch-Time"] = last_fetch_time.isoformat()
     return db.query(models.Movie).all()
 
 @app.get("/webcomics", response_model=list[schemas.Webcomic])
 def get_webcomics(response: Response, db: Session = Depends(get_db)) -> Any:
-    global last_fetch_time
-    last_fetch_time = datetime.now()
     response.headers["Fetch-Time"] = last_fetch_time.isoformat()
     return db.query(models.Webcomic).all()
 
 @app.post("/shows", status_code=status.HTTP_204_NO_CONTENT)
 def post_show(show: schemas.Show, fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> Any:
-    if fetch_time is not None and fetch_time != last_fetch_time:
+    global last_fetch_time
+    if fetch_time is None or fetch_time != last_fetch_time:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
 
     show.last_updated = datetime.now()
-
     if show.id is None:
         add(show, models.Show, schemas.Show, undo_stack, db)
     else:
         update(show, models.Show, schemas.Show, undo_stack, db)
 
     redo_stack.clear()
+    last_fetch_time = datetime.now()
 
 @app.post("/movies", status_code=status.HTTP_204_NO_CONTENT)
 def post_movie(movie: schemas.Movie, fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> Any:
-    if fetch_time is not None and fetch_time != last_fetch_time:
+    global last_fetch_time
+    if fetch_time is None or fetch_time != last_fetch_time:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
 
     movie.last_updated = datetime.now()
-
     if movie.id is None:
         add(movie, models.Movie, schemas.Movie, undo_stack, db)
     else:
         update(movie, models.Movie, schemas.Movie, undo_stack, db)
 
     redo_stack.clear()
+    last_fetch_time = datetime.now()
 
 @app.post("/webcomics", status_code=status.HTTP_204_NO_CONTENT)
 def post_webcomic(webcomic: schemas.Webcomic, fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> Any:
-    if fetch_time is not None and fetch_time != last_fetch_time:
+    global last_fetch_time
+    if fetch_time is None or fetch_time != last_fetch_time:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
 
     webcomic.last_updated = datetime.now()
-
     if webcomic.id is None:
         add(webcomic, models.Webcomic, schemas.Webcomic, undo_stack, db)
     else:
         update(webcomic, models.Webcomic, schemas.Webcomic, undo_stack, db)
 
     redo_stack.clear()
+    last_fetch_time = datetime.now()
 
 @app.delete("/shows/{show_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_show(show_id: int, fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> None:
-    if fetch_time is not None and fetch_time != last_fetch_time:
+    global last_fetch_time
+    if fetch_time is None or fetch_time != last_fetch_time:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
 
     item = schemas.Show()
     item.id = show_id
     delete(item, models.Show, schemas.Show, undo_stack, db)
+
     redo_stack.clear()
+    last_fetch_time = datetime.now()
 
 @app.delete("/movies/{movie_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_movie(movie_id: int, fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> None:
-    if fetch_time is not None and fetch_time != last_fetch_time:
+    global last_fetch_time
+    if fetch_time is None or fetch_time != last_fetch_time:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
 
     item = schemas.Movie()
     item.id = movie_id
     delete(item, models.Movie, schemas.Movie, undo_stack, db)
+
     redo_stack.clear()
+    last_fetch_time = datetime.now()
 
 @app.delete("/webcomics/{webcomic_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_webcomic(webcomic_id: int, fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> None:
-    if fetch_time is not None and fetch_time != last_fetch_time:
+    global last_fetch_time
+    if fetch_time is None or fetch_time != last_fetch_time:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
 
     item = schemas.Webcomic()
     item.id = webcomic_id
     delete(item, models.Webcomic, schemas.Webcomic, undo_stack, db)
+
     redo_stack.clear()
+    last_fetch_time = datetime.now()
 
 @app.post("/undo", status_code=status.HTTP_204_NO_CONTENT)
 def undo(fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> None:
+    global last_fetch_time
     if fetch_time is not None and fetch_time != last_fetch_time:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
 
     stack_operation(undo_stack, redo_stack, db)
+    last_fetch_time = datetime.now()
 
 @app.post("/redo", status_code=status.HTTP_204_NO_CONTENT)
 def redo(fetch_time: datetime = Header(default=None), db: Session = Depends(get_db)) -> None:
+    global last_fetch_time
     if fetch_time is not None and fetch_time != last_fetch_time:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetch time out of date.")
 
     stack_operation(redo_stack, undo_stack, db)
+    last_fetch_time = datetime.now()
 
 def add(obj: SchemaTypes, model: Type[ModelTypes], schema: Type[SchemaTypes], stack: OperationStackType, db: Session) -> None:
     new_show = db.merge(model(**obj.dict()))
@@ -155,6 +165,7 @@ def delete(obj: SchemaTypes, model: Type[ModelTypes], schema: Type[SchemaTypes],
     db.commit()
 
 def stack_operation(stack: OperationStackType, reverse_stack: OperationStackType, db: Session) -> None:
+    print(len(stack))
     if not stack:
         return
 
