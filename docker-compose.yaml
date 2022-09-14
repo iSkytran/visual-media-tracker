@@ -1,0 +1,9 @@
+services:
+  frontend:
+    container_name: visual-media-tracker-frontend
+    image: ghcr.io/iskytran/visual-media-tracker-frontend:latest
+    ports:
+      - "80:80"
+  backend:
+    container_name: visual-media-tracker-backend
+    image: ghcr.io/iskytran/visual-media-tracker-backend:latest

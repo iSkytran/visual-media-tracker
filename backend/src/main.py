@@ -1,5 +1,6 @@
 from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, status, Header, Response
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import Any, Iterator, Type
 import database
@@ -17,6 +18,15 @@ undo_stack: OperationStackType = []
 redo_stack: OperationStackType = []
 
 last_fetch_time: datetime = datetime.now()
+
+origins = ["http://localhost:5173"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def get_db() -> Iterator[Session]:
     db = database.SessionLocal()
@@ -159,7 +169,7 @@ def update(obj: SchemaTypes, model: Type[ModelTypes], schema: Type[SchemaTypes],
 def delete(obj: SchemaTypes, model: Type[ModelTypes], schema: Type[SchemaTypes], stack: OperationStackType, db: Session) -> None:
     item = db.query(model).get(obj.id)
     if item is None:
-        raise HTTPException(status_code=status.HTTP_404_BAD_REQUEST, detail="No entry with corresponding id.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No entry with corresponding id.")
     stack.append(("add", model, schema, schema.from_orm(item)))
     db.delete(item)
     db.commit()
